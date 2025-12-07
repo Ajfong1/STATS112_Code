@@ -1,0 +1,117 @@
+---
+title: "STATS 112 - FInal Project Code"
+author: "AJ Fong 006513485"
+date: "2025-11-13"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(leaps)
+library(ggplot2)
+library(dotwhisker)
+library(car)
+```
+
+## R Markdown
+
+```{r}
+mba_df <- read.csv("mba.csv")
+```
+
+## Data Cleaning
+
+```{r}
+#Re-code 100 instances of "waitlist" to "reject", "" into Reject
+mba_df$admission[mba_df$admission == "Waitlist"] <- "Reject"
+mba_df$admission[mba_df$admission == ""] <- "Reject"
+
+#Re-code "" for race into international
+mba_df$race[mba_df$race == ""] <- "International"
+
+mba_df$admission_binary <- ifelse(mba_df$admission == "Admit", yes = 1, no = 0)
+
+#Re-code "" for race into international
+mba_df$race[mba_df$race == ""] <- "International"
+mba_df$race[mba_df$race == "Other"] <- "International"
+
+
+#Re-code categorical variables into factors
+mba_df$gender <- as.factor(mba_df$gender)
+mba_df$international <- as.factor(mba_df$international)
+mba_df$major <- as.factor(mba_df$major)
+mba_df$work_industry <- as.factor(mba_df$work_industry)
+mba_df$admission <- as.factor(mba_df$admission)
+
+
+#Split data into training data and testing data (80/20 split)
+train_IDX <- sample(1:nrow(mba_df), 0.8 * nrow(mba_df))
+train_df <- mba_df[train_IDX, ]
+test_df <- mba_df[-train_IDX, ]
+
+mba_df$work_exp <- as.factor(mba_df$work_exp)
+mba_df$race <- as.factor(mba_df$race)
+
+mba_df <- mba_df[,-c(1,3)]
+
+
+```
+
+## Comparison of GMAT Scores Across Races
+
+```{r}
+boxplot(gmat ~ race,data = mba_df)
+boxplot(gmat ~ gender,data = mba_df)
+
+model <- lm(gmat ~ race, data = mba_df)
+anova(model)
+dwplot(model)
+```
+
+## BIC AIC to Determine Variables
+
+```{r}
+### ==== BIC ==== ###
+fwd <- regsubsets(admission_binary ~ . -admission, data = mba_df, 
+                  method = "forward", nvmax = ncol(mba_df))
+summary(fwd)
+bic <- summary(fwd)$bic
+plot(bic)
+which.min(bic)
+```
+
+```{r}
+### ==== AIC ==== ###
+bwd <- regsubsets(admission_binary ~ . -admission, data = mba_df, 
+                  method = "backward", nvmax = ncol(mba_df))
+summary(bwd)
+aic <- summary(bwd)$bic
+plot(aic)
+which.min(aic)
+```
+
+## Logistic Model
+
+```{r}
+logistic_model <- glm(admission_binary ~ gmat + gender + gpa + race, data = mba_df,
+                      family = "binomial")
+summary(logistic_model)
+Anova(logistic_model, type = "II")
+
+vif(logistic_model)
+```
+
+## LPM Model
+
+```{r}
+### ==== OPTIMAL MODEL ACCORDING TO BIC & AIC ==== ###
+lpm <- lm(admission_binary ~ gmat + gender + gpa + race, data = mba_df)
+summary(lpm)
+
+
+lpm_coefs <- lpm |> tidy() |> select(term, estimate) |> rename('LPM Estimate' = estimate)
+logistic_coefs <- logistic_model |> tidy() |>
+mutate(`Exp(Estimate)` = exp(estimate), .before = estimate)
+# combine
+left_join(lpm_coefs, logistic_coefs, by = "term")
+```
